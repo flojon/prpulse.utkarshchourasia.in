@@ -237,5 +237,32 @@ testFilterCount();
 testSearch();
 testNormalizeFilterState();
 testBadgeCount();
+// Only a confirmed conflict counts: GitHub computes mergeability lazily, so `unknown` is routine and
+// says nothing about conflicts.
+function testConflictsFilter(): void {
+	const filters = createDefaultFilters();
+	const mixed = [
+		pr({ id: 'a', mergeable: 'conflicting' }),
+		pr({ id: 'b', mergeable: 'mergeable' }),
+		pr({ id: 'c', mergeable: 'unknown' }),
+		pr({ id: 'd' }),
+		pr({ id: 'e', mergeable: 'conflicting', isDraft: true }),
+	];
+	const ids = (list: PullRequest[]) => list.map((item) => item.id);
+
+	assert.deepEqual(ids(createPrView(mixed, filters, '', 'myPRs').items), ['a', 'b', 'c', 'd']);
+	assert.deepEqual(ids(createPrView(mixed, { ...filters, conflictsOnly: true }, '', 'myPRs').items), ['a']);
+	// Works on both tabs, combines with the draft filter, and counts as an active filter everywhere.
+	assert.deepEqual(ids(createPrView(mixed, { ...filters, conflictsOnly: true, drafts: 'include' }, '', 'toReview').items), ['a', 'e']);
+	assert.equal(countActiveFilters({ ...filters, conflictsOnly: true }, 'myPRs'), 1);
+	assert.equal(countActiveFilters({ ...filters, conflictsOnly: true }, 'toReview'), 1);
+
+	assert.equal(sameFilters(filters, { ...filters, conflictsOnly: true }), false);
+	// Stored filters from before this option existed read as off.
+	assert.equal(normalizeFilterState({ tabs: { myPRs: { drafts: 'include' } } }, 'myPRs').myPRs.conflictsOnly, false);
+	assert.equal(normalizeFilterState({ tabs: { myPRs: { conflictsOnly: true } } }, 'myPRs').myPRs.conflictsOnly, true);
+}
+
 testSwitchTab();
+testConflictsFilter();
 console.log('pr-view: all checks passed');

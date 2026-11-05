@@ -96,7 +96,8 @@
 		const checksStatus = pr.checks?.status;
 		const reviewsStatus = pr.reviews?.status;
 
-		if (checksStatus === 'failure' || reviewsStatus === 'changes_requested') {
+		// A PR that can't merge isn't green, however its checks and reviews look.
+		if (pr.mergeable === 'conflicting' || checksStatus === 'failure' || reviewsStatus === 'changes_requested') {
 			return 'pr-card-danger';
 		}
 
@@ -222,6 +223,18 @@
 					<span class="status-inline-label">{reviewDisplay.label}</span>
 					<ExternalLink class="status-link-icon" />
 				</button>
+				{#if pr.mergeable === 'conflicting'}
+					<!-- GitHub shows the conflicting files, and the resolve button, in the PR's merge box. -->
+					<button
+						class="unstyled-button status-inline min-w-0 group status-inline-danger"
+						onclick={() => onOpenUrl(pr.url)}
+						title="This branch has conflicts that must be resolved"
+					>
+						<span class="status-dot status-dot-danger"></span>
+						<span class="status-inline-label">Conflicts</span>
+						<ExternalLink class="status-link-icon" />
+					</button>
+				{/if}
 				<div class="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-medium leading-none text-dim" title={createdAtText}>
 					<Clock class="h-3 w-3" />
 					<span>{formatPrAge(pr.createdAt)}</span>

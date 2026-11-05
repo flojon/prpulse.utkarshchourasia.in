@@ -131,6 +131,8 @@ export interface PopupFilters {
 	ageRange: string;
 	drafts: 'only' | 'include' | 'exclude';
 	showReviewed: boolean;
+	/** Only PRs GitHub reports as conflicting. `unknown` (not yet computed) is not a conflict. */
+	conflictsOnly: boolean;
 }
 
 export type StoredFilters = Partial<PopupFilters>;
