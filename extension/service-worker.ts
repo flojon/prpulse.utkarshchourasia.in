@@ -54,20 +54,57 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<
 	throw lastError;
 }
 
+// One sync at a time. A poll, the popup's refresh button and a token change can all ask at once; a
+// second fetch would double the requests and race the first to the same storage keys, and two
+// writers of the progress status would each mark it finished while the other was still running.
+let syncInFlight: Promise<void> | null = null;
+
+function syncPRs(): Promise<void> {
+	syncInFlight ??= runSync().finally(() => {
+		syncInFlight = null;
+	});
+	return syncInFlight;
+}
+
 async function fetchAndCachePRs(throwError = false): Promise<void> {
 	try {
-		const source = await currentSource();
-		if (!source) {
-			console.log('No provider configured, skipping fetch');
-			if (throwError) throw new Error('No provider configured');
-			return;
-		}
+		await syncPRs();
+	} catch (error) {
+		if (throwError) throw error;
+	}
+}
 
+async function runSync(): Promise<void> {
+	const source = await currentSource();
+	if (!source) {
+		console.log('No provider configured, skipping fetch');
+		throw new Error('No provider configured');
+	}
+
+	const startedAt = Date.now();
+	// Writes from the progress callback, chained so they land in order and all before the final write.
+	let progressWrites: Promise<unknown> = storage.setSyncStatus({ inProgress: true, loaded: 0, total: 0, startedAt });
+
+	try {
 		console.log('Fetching PR data...');
 		// Read before the overwrite: the previous poll's result is still on disk at this instant, which is
 		// the whole reason notifications need no snapshot key of their own.
 		const previous = await storage.getPullRequests();
-		const data = await fetchWithRetry(() => source.getAllPullRequests());
+		// Only a first sync shows PRs as they arrive. Afterwards the popup keeps the last complete list
+		// until the new one is whole, rather than shrinking to page one and growing back on every poll.
+		const firstSync = previous.lastFetched === null;
+
+		const data = await fetchWithRetry(() =>
+			source.getAllPullRequests((partial, progress) => {
+				progressWrites = progressWrites.then(() =>
+					Promise.all([
+						storage.setSyncStatus({ inProgress: true, ...progress, startedAt }),
+						firstSync ? storage.setPartialPullRequests(partial) : null,
+					]),
+				);
+			}),
+		);
+		await progressWrites;
 		await storage.setPullRequests(data);
 		await refreshBadge();
 		await notify(source, previous, data);
@@ -81,7 +118,10 @@ async function fetchAndCachePRs(throwError = false): Promise<void> {
 				await storage.setProvider(config);
 			}
 		}
-		if (throwError) throw error;
+		throw error;
+	} finally {
+		await progressWrites.catch(() => undefined);
+		await storage.setSyncStatus({ inProgress: false, loaded: 0, total: 0, startedAt });
 	}
 }
 
@@ -238,9 +278,13 @@ runtimeOnMessageAddListener(async (message) => {
 });
 
 const messageHandlers: Record<RuntimeMessage['type'], (message: RuntimeMessage) => Promise<unknown>> = {
+	// Answers before the first fetch finishes: with many PRs that fetch takes tens of seconds, and both
+	// onboarding and settings wait on this reply. The popup follows the fetch through `syncStatus`.
+	// A sync already running was started with the previous token, so this one queues behind it rather
+	// than joining it.
 	PROVIDER_CONFIGURED: async () => {
-		await fetchAndCachePRs();
 		await setupPollingAlarm(true);
+		void (syncInFlight ?? Promise.resolve()).catch(() => undefined).then(() => fetchAndCachePRs());
 		return { success: true };
 	},
 	REFRESH_PRS: async () => {

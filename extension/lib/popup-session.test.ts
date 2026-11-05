@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createPopupSession, TOKEN_EXPIRED_MESSAGE } from './popup-session';
+import { activeSync, createPopupSession, STALE_SYNC_MS, TOKEN_EXPIRED_MESSAGE } from './popup-session';
 import { createMemoryStore, createStorage } from './storage-core';
 import { createDefaultFiltersByTab } from './pr-view';
 import type { PullRequest, RuntimeMessage } from './types';
@@ -191,6 +191,30 @@ async function testRefreshBlockedBeforeSetup(): Promise<void> {
 	assert.deepEqual(sent, []);
 }
 
+// The popup shows "Syncing" from what the worker left on disk. A worker killed mid-fetch never writes
+// the finish, so an old in-progress status must read as no sync at all.
+async function testSyncStatus(): Promise<void> {
+	const now = Date.now();
+	const running = { inProgress: true, loaded: 25, total: 155, startedAt: now - 1000 };
+
+	assert.equal(activeSync(undefined, now), null);
+	assert.equal(activeSync({ ...running, inProgress: false }, now), null);
+	assert.deepEqual(activeSync(running, now), running);
+	assert.equal(activeSync({ ...running, startedAt: now - STALE_SYNC_MS - 1 }, now), null);
+
+	// Opening mid-sync picks it up; the worker's later writes move it on and then clear it.
+	const { session } = sessionOver({ provider: connectedProvider, syncStatus: running });
+	await session.open();
+	assert.deepEqual(session.getState().sync, running);
+
+	session.applySyncStatus({ ...running, loaded: 50 });
+	assert.equal(session.getState().sync?.loaded, 50);
+
+	session.applySyncStatus({ ...running, inProgress: false });
+	assert.equal(session.getState().sync, null);
+}
+
+await testSyncStatus();
 await testSetupRequiredLeavesStorageAlone();
 await testRestoresFiltersOnlyWhenAsked();
 await testFilterWritesReachDisk();
