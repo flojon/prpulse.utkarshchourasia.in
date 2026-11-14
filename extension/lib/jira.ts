@@ -46,7 +46,10 @@ export function commitJiraUrl(typed: string): string | null {
  * Where Jira's own routes start. Everything from the first of these on is a pasted deep link, not
  * part of the base. `jira` is deliberately absent: on Data Center it is the usual context path.
  */
-const JIRA_ROUTES = new Set(['browse', 'secure', 'projects', 'issues', 'plugins', 'rest', 'servicedesk', 'login.jsp']);
+const JIRA_ROUTES = new Set(['browse', 'secure', 'projects', 'issues', 'plugins', 'rest', 'servicedesk']);
+
+/** Legacy Jira pages (`login.jsp`, `Dashboard.jspa`) are never a context path, wherever they sit. */
+const JIRA_PAGE = /\.jspa?$/i;
 
 /**
  * Self-hosted Jira can live under a context path (`https://example.com/jira`), so the path before
@@ -57,7 +60,7 @@ function contextPath(url: URL): string {
 	if (isCloud(url)) return '';
 
 	const segments = url.pathname.split('/').filter(Boolean);
-	const end = segments.findIndex((segment) => JIRA_ROUTES.has(segment.toLowerCase()));
+	const end = segments.findIndex((segment) => JIRA_ROUTES.has(segment.toLowerCase()) || JIRA_PAGE.test(segment));
 	const kept = end === -1 ? segments : segments.slice(0, end);
 
 	return kept.length ? `/${kept.join('/')}` : '';

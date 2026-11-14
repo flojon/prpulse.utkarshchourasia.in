@@ -33,6 +33,12 @@ function testSanitizeKeepsSelfHostedContextPath(): void {
 	assert.equal(sanitizeJiraUrl('https://jira.example.com/projects/PB/issues'), 'https://jira.example.com');
 	assert.equal(sanitizeJiraUrl('https://example.com/jira/login.jsp?os_destination=%2Fbrowse'), 'https://example.com/jira');
 
+	// A pasted legacy page is cut off even when it is not under a known route.
+	assert.equal(sanitizeJiraUrl('https://example.com/jira/Dashboard.jspa'), 'https://example.com/jira');
+	assert.equal(sanitizeJiraUrl('https://example.com/jira/dashboard.JSP?x=1'), 'https://example.com/jira');
+	assert.equal(sanitizeJiraUrl('https://jira.example.com/Dashboard.jspa'), 'https://jira.example.com');
+	assert.equal(sanitizeJiraUrl('https://example.com/jira.corp/tools'), 'https://example.com/jira.corp/tools');
+
 	// Route names match whatever case a pasted link used.
 	assert.equal(sanitizeJiraUrl('https://example.com/jira/Browse/PB-1'), 'https://example.com/jira');
 	assert.equal(sanitizeJiraUrl('https://example.com/jira/SECURE/Dashboard.jspa'), 'https://example.com/jira');
