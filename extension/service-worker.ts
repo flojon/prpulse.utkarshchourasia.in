@@ -249,6 +249,8 @@ runtimeOnMessageAddListener(async (message) => {
 const messageHandlers: Record<RuntimeMessage['type'], (message: RuntimeMessage) => Promise<unknown>> = {
 	PROVIDER_CONFIGURED: async () => {
 		await fetchAndCachePRs({ silent: true });
+		// A failed fetch skips the badge refresh, and a switched account's cache was just cleared.
+		await refreshBadge();
 		await setupPollingAlarm(true);
 		return { success: true };
 	},
