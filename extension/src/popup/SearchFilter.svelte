@@ -566,11 +566,11 @@
                             <div class={`filter-section-body ${layout.contentPad}`}>
                         <div class={`flex flex-col ${layout.sectionGap}`}>
                             <label class={`filter-label ${layout.labelPad}`}>
-                                <input type="radio" name="conflict_filter" value="all" checked={!activeFilters.conflictsOnly} onchange={() => { activeFilters = { ...activeFilters, conflictsOnly: false }; }} class="h-3.5 w-3.5 border-soft bg-black/40 text-(--accent) focus:ring-(--accent)" />
+                                <input type="radio" name="conflict_filter" value={false} bind:group={activeFilters.conflictsOnly} class="h-3.5 w-3.5 border-soft bg-black/40 text-(--accent) focus:ring-(--accent)" />
                                 <span class="filter-label-text">All PRs</span>
                             </label>
                             <label class={`filter-label ${layout.labelPad}`}>
-                                <input type="radio" name="conflict_filter" value="only" checked={activeFilters.conflictsOnly} onchange={() => { activeFilters = { ...activeFilters, conflictsOnly: true }; }} class="h-3.5 w-3.5 border-soft bg-black/40 text-(--accent) focus:ring-(--accent)" />
+                                <input type="radio" name="conflict_filter" value={true} bind:group={activeFilters.conflictsOnly} class="h-3.5 w-3.5 border-soft bg-black/40 text-(--accent) focus:ring-(--accent)" />
                                 <span class="min-w-0 flex-1 text-soft">Only PRs with conflicts</span>
                             </label>
                         </div>
