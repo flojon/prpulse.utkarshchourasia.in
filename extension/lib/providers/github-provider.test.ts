@@ -202,6 +202,23 @@ function testReviewStatus(): void {
 		'approved',
 	);
 
+	// An unrecognised decision falls back to the local reading.
+	assert.equal(buildReviews(pr({ reviews: { nodes: [review('ada', 'APPROVED')] }, reviewDecision: 'SOMETHING_NEW' })).status, 'approved');
+
+	// A GitHub-reported CHANGES_REQUESTED still yields the deep-link fields, skipping bot reviews.
+	const changes = buildReviews(
+		pr({
+			reviews: { nodes: [{ ...review('ada', 'CHANGES_REQUESTED'), databaseId: 7 }, { ...review('bot', 'CHANGES_REQUESTED', 'Bot'), databaseId: 9 }] },
+			reviewThreads: {
+				nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [{ url: 'u1', createdAt: '2024-01-01T00:00:00Z' }] } }],
+			},
+			reviewDecision: 'CHANGES_REQUESTED',
+		}),
+	);
+	assert.equal(changes.changesRequestedReviewId, 7);
+	assert.equal(changes.openThreadCount, 1);
+	assert.equal(changes.firstUnresolvedThreadUrl, 'u1');
+
 	// Team requests stay out of `pendingReviewers`, which notifications match against the viewer's login.
 	const mixed = { nodes: [{ requestedReviewer: { __typename: 'User', login: 'ada' } }, { requestedReviewer: { __typename: 'Team' } }] };
 	assert.deepEqual(buildReviews(pr({ reviewRequests: mixed })).pendingReviewers, ['ada']);
