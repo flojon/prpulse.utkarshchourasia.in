@@ -190,6 +190,10 @@ function testReviewStatus(): void {
 	assert.equal(buildReviews(pr({ reviews: botApprovals, reviewDecision: 'APPROVED' })).status, 'approved');
 	assert.equal(buildReviews(pr({ reviewDecision: 'CHANGES_REQUESTED' })).status, 'changes_requested');
 
+	// GitHub's APPROVED stands even while a user is re-requested.
+	const userRequest = { nodes: [{ requestedReviewer: { __typename: 'User', login: 'ada' } }] };
+	assert.equal(buildReviews(pr({ reviewRequests: userRequest, reviewDecision: 'APPROVED' })).status, 'approved');
+
 	// No decision (no review required): bots don't count as reviewers, and a team request is still pending.
 	const botsOnly = buildReviews(pr({ reviews: botApprovals, reviewDecision: null }));
 	assert.equal(botsOnly.status, 'pending');
