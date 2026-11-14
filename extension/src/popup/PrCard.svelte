@@ -88,6 +88,12 @@
 		return link && isValidHttpUrl(link.url) ? link : null;
 	}
 
+	// Conflicts block the merge whatever the reviewers think, so they replace the yellow/red review
+	// state. Approved stays green: the review is done and the badge shouldn't hide that.
+	function hasConflicts(pr: PullRequest) {
+		return pr.mergeable === 'conflicting' && pr.reviews?.status !== 'approved';
+	}
+
 	function getCardStatusClass(pr: PullRequest) {
 		if (pr.isDraft) {
 			return 'pr-card-draft';
@@ -96,8 +102,7 @@
 		const checksStatus = pr.checks?.status;
 		const reviewsStatus = pr.reviews?.status;
 
-		// A PR that can't merge isn't green, however its checks and reviews look.
-		if (pr.mergeable === 'conflicting' || checksStatus === 'failure' || reviewsStatus === 'changes_requested') {
+		if (checksStatus === 'failure' || reviewsStatus === 'changes_requested' || hasConflicts(pr)) {
 			return 'pr-card-danger';
 		}
 
@@ -115,7 +120,11 @@
 		return 'pr-card-warning';
 	}
 
-	let reviewDisplay = $derived(getReviewStatusDisplay(pr.reviews?.status, pr.reviews?.openThreadCount));
+	let reviewDisplay = $derived(
+		hasConflicts(pr)
+			? { label: 'Merge Conflicts', tone: 'status-inline-danger', dot: 'status-dot-danger' }
+			: getReviewStatusDisplay(pr.reviews?.status, pr.reviews?.openThreadCount)
+	);
 	let checkDisplay = $derived(getCheckStatusDisplay(pr.checks?.status));
 	let jiraLink = $derived(getJiraLink(pr));
 	let branchUrl = $derived(getBranchUrl(pr));
@@ -127,7 +136,7 @@
 		? 'unstyled-button status-inline group'
 		: 'unstyled-button status-inline min-w-0 group');
 	let reviewUrl = $derived(
-		pr.reviews?.status === 'changes_requested'
+		pr.reviews?.status === 'changes_requested' && !hasConflicts(pr)
 			? (pr.reviews?.firstUnresolvedThreadUrl
 				?? (pr.reviews?.changesRequestedReviewId
 					? `${pr.url}#pullrequestreview-${pr.reviews.changesRequestedReviewId}`
@@ -223,18 +232,6 @@
 					<span class="status-inline-label">{reviewDisplay.label}</span>
 					<ExternalLink class="status-link-icon" />
 				</button>
-				{#if pr.mergeable === 'conflicting'}
-					<!-- GitHub shows the conflicting files, and the resolve button, in the PR's merge box. -->
-					<button
-						class="unstyled-button status-inline min-w-0 group status-inline-danger"
-						onclick={() => onOpenUrl(pr.url)}
-						title="This branch has conflicts that must be resolved"
-					>
-						<span class="status-dot status-dot-danger"></span>
-						<span class="status-inline-label">Conflicts</span>
-						<ExternalLink class="status-link-icon" />
-					</button>
-				{/if}
 				{#if pr.behindBy && pr.behindBy > 0}
 					<span class="shrink-0 whitespace-nowrap text-[11px] font-medium text-dim" title={`${pr.behindBy} commit${pr.behindBy === 1 ? '' : 's'} on the base branch not yet in this branch`}>
 						{pr.behindBy} behind
