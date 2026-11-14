@@ -457,39 +457,56 @@ export class GitHubProvider implements PrSource {
 		};
 	}
 
-	/** How far each PR's branch trails its base. Best effort: a failure leaves the counts off, never the refresh broken. */
-	async #attachBehindCounts(nodes: GraphQLPullRequest[], pullRequests: PullRequest[]): Promise<void> {
-		const byId = new Map(pullRequests.map((pr) => [pr.id, pr]));
-		const targets: BehindTarget[] = nodes
-			.filter((node) => node.repository && node.baseRefName && node.headRefOid)
-			.map((node) => ({
+	#behindTargets = new Map<string, BehindTarget>();
+
+	#rememberBehindTarget(node: GraphQLPullRequest): void {
+		const name = node.repository?.nameWithOwner.split('/')[1];
+		if (node.repository && name && node.baseRefName && node.headRefOid) {
+			this.#behindTargets.set(`github-${node.id}`, {
 				id: `github-${node.id}`,
-				owner: node.repository!.owner.login,
-				name: node.repository!.nameWithOwner.split('/')[1] || '',
+				owner: node.repository.owner.login,
+				name,
 				base: node.baseRefName,
 				headOid: node.headRefOid,
-			}))
-			.filter((target) => target.name);
-
-		for (let start = 0; start < targets.length; start += BEHIND_CHUNK_SIZE) {
-			const chunk = targets.slice(start, start + BEHIND_CHUNK_SIZE);
-			try {
-				const { query, variables } = buildBehindQuery(chunk);
-				const data = await this.#graphql<BehindResponse>(query, variables);
-				this.#logCost(`behind counts (${chunk.length})`, data.rateLimit);
-				for (const [id, behindBy] of readBehindCounts(chunk, data)) {
-					const pr = byId.get(id);
-					if (pr) pr.behindBy = behindBy;
-				}
-			} catch (error) {
-				console.warn('GitHub GraphQL behind counts unavailable:', error);
-			}
+			});
 		}
+	}
+
+	/**
+	 * How far each PR's branch trails its base, looked up once per distinct PR after the views are merged.
+	 * Best effort: a failed chunk leaves its counts off, never the refresh broken.
+	 */
+	async #attachBehindCounts(lists: PullRequest[][]): Promise<void> {
+		const byId = new Map<string, PullRequest[]>();
+		for (const pr of lists.flat()) {
+			byId.set(pr.id, [...(byId.get(pr.id) ?? []), pr]);
+		}
+		const targets = [...byId.keys()].flatMap((id) => this.#behindTargets.get(id) ?? []);
+
+		const chunks: BehindTarget[][] = [];
+		for (let start = 0; start < targets.length; start += BEHIND_CHUNK_SIZE) {
+			chunks.push(targets.slice(start, start + BEHIND_CHUNK_SIZE));
+		}
+
+		await Promise.all(
+			chunks.map(async (chunk) => {
+				try {
+					const { query, variables } = buildBehindQuery(chunk);
+					const data = await this.#graphql<BehindResponse>(query, variables);
+					this.#logCost(`behind counts (${chunk.length})`, data.rateLimit);
+					for (const [id, behindBy] of readBehindCounts(chunk, data)) {
+						for (const pr of byId.get(id) ?? []) pr.behindBy = behindBy;
+					}
+				} catch (error) {
+					console.warn('GitHub GraphQL behind counts unavailable:', error);
+				}
+			}),
+		);
+		this.#behindTargets.clear();
 	}
 
 	async #fetchView(view: SearchView, issueCount: number): Promise<PullRequest[]> {
 		const pullRequests: PullRequest[] = [];
-		const nodes: GraphQLPullRequest[] = [];
 		let cursor: string | null = null;
 		let dropped = 0;
 
@@ -504,7 +521,7 @@ export class GitHubProvider implements PrSource {
 					continue;
 				}
 
-				nodes.push(node);
+				this.#rememberBehindTarget(node);
 				pullRequests.push(this.#transformPullRequest(node));
 			}
 
@@ -528,8 +545,6 @@ export class GitHubProvider implements PrSource {
 			// They are dropped from the view, so say so rather than letting them vanish silently.
 			console.warn(`GitHub GraphQL ${view}: dropped ${dropped} unreadable PR node(s); they will not appear in the dashboard`);
 		}
-
-		await this.#attachBehindCounts(nodes, pullRequests);
 
 		return pullRequests;
 	}
@@ -555,6 +570,8 @@ export class GitHubProvider implements PrSource {
 				merged.push(pr);
 			}
 		}
+
+		await this.#attachBehindCounts([myPRs, merged]);
 
 		return { myPRs, reviewRequests: merged };
 	}
