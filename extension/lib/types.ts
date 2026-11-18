@@ -70,6 +70,14 @@ export interface PrSourceResult {
 	reviewRequests: PullRequest[];
 }
 
+/** The worker's fetch, as the popup sees it. Kept in storage because the worker and the popup share nothing else. */
+export interface SyncStatus {
+	inProgress: boolean;
+	startedAt: number;
+	/** Refreshed by the worker while it runs, so a slow but live sync is not mistaken for an abandoned one. */
+	updatedAt?: number;
+}
+
 /** The seam: fetching pull requests. Token identity is a separate concern and deliberately absent. */
 export interface PrSource {
 	getAllPullRequests(): Promise<PrSourceResult>;

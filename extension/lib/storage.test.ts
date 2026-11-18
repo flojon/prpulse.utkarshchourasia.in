@@ -84,6 +84,16 @@ async function testAuthenticatedNeedsTokenAndUser(): Promise<void> {
 	assert.equal(await storage.isAuthenticated(), false);
 }
 
+async function testSyncStatusIsPartOfBootstrap(): Promise<void> {
+	const storage = createStorage(createMemoryStore());
+	assert.equal((await storage.getBootstrapData()).syncStatus, undefined);
+
+	const status = { inProgress: true, startedAt: 1 };
+	await storage.setSyncStatus(status);
+	assert.deepEqual((await storage.getBootstrapData()).syncStatus, status);
+}
+
+await testSyncStatusIsPartOfBootstrap();
 await testDefaultsOnEmptyStore();
 await testBootstrapMatchesTheIndividualReads();
 await testSettingsMerge();
