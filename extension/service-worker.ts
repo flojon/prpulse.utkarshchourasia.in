@@ -56,13 +56,11 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<
 
 interface FetchOptions {
 	throwError?: boolean;
-	/** Refresh without notifying: the cache it would diff against may be hours old or another account's. */
-	silent?: boolean;
-	/** Go silent anyway when the cache is too old to diff, e.g. an overdue alarm or a failed startup fetch. */
+	/** Skip notifying when the cache is too old to diff: an overdue alarm, browser start, a dead token. */
 	quietIfStale?: boolean;
 }
 
-async function fetchAndCachePRs({ throwError = false, silent = false, quietIfStale = false }: FetchOptions = {}): Promise<void> {
+async function fetchAndCachePRs({ throwError = false, quietIfStale = false }: FetchOptions = {}): Promise<void> {
 	try {
 		const source = await currentSource();
 		if (!source) {
@@ -79,7 +77,7 @@ async function fetchAndCachePRs({ throwError = false, silent = false, quietIfSta
 		await storage.setPullRequests(data);
 		await refreshBadge();
 		const stale = quietIfStale && isStaleCache(previous.lastFetched, Date.now(), (await storage.getSettings()).pollingIntervalMs);
-		if (!silent && !stale) await notify(source, previous, data);
+		if (!stale) await notify(source, previous, data);
 		console.log(`Fetched ${data.myPRs.length} my PRs, ${data.reviewRequests.length} review requests`);
 	} catch (error) {
 		console.error('Failed to fetch PR data:', error);
@@ -213,13 +211,13 @@ runtimeOnInstalledAddListener(async (details) => {
 		return;
 	}
 
-	await fetchAndCachePRs({ silent: true });
+	await fetchAndCachePRs({ quietIfStale: true });
 	await setupPollingAlarm(true);
 });
 
 runtimeOnStartupAddListener(async () => {
 	await refreshBadge();
-	await fetchAndCachePRs({ silent: true });
+	await fetchAndCachePRs({ quietIfStale: true });
 	await setupPollingAlarm(true);
 });
 
@@ -248,7 +246,7 @@ runtimeOnMessageAddListener(async (message) => {
 
 const messageHandlers: Record<RuntimeMessage['type'], (message: RuntimeMessage) => Promise<unknown>> = {
 	PROVIDER_CONFIGURED: async () => {
-		await fetchAndCachePRs({ silent: true });
+		await fetchAndCachePRs({ quietIfStale: true });
 		// A failed fetch skips the badge refresh, and a switched account's cache was just cleared.
 		await refreshBadge();
 		await setupPollingAlarm(true);
