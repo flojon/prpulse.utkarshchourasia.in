@@ -190,9 +190,10 @@ function testReviewStatus(): void {
 	assert.equal(buildReviews(pr({ reviews: botApprovals, reviewDecision: 'APPROVED' })).status, 'approved');
 	assert.equal(buildReviews(pr({ reviewDecision: 'CHANGES_REQUESTED' })).status, 'changes_requested');
 
-	// GitHub's APPROVED stands even while a user is re-requested.
+	// An outstanding request holds GitHub's APPROVED back to pending, so it stays in that reviewer's list.
 	const userRequest = { nodes: [{ requestedReviewer: { __typename: 'User', login: 'ada' } }] };
-	assert.equal(buildReviews(pr({ reviewRequests: userRequest, reviewDecision: 'APPROVED' })).status, 'approved');
+	assert.equal(buildReviews(pr({ reviewRequests: userRequest, reviewDecision: 'APPROVED' })).status, 'pending');
+	assert.equal(buildReviews(pr({ reviewRequests: teamRequest, reviewDecision: 'APPROVED' })).status, 'pending');
 
 	// No decision (no review required): bots don't count as reviewers, and a team request is still pending.
 	const botsOnly = buildReviews(pr({ reviews: botApprovals, reviewDecision: null }));

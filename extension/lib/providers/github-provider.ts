@@ -272,9 +272,12 @@ export function buildReviews(pr: GraphQLPullRequest): PullRequestReviews {
 
 	// GitHub's decision wins when it has one: it knows the branch protection rules, code owners and
 	// required review count that this can't see. The local reading only fills in when no review is required.
+	// An approval still held up by an open request stays pending, or it vanishes from that reviewer's list.
 	let status: PullRequestReviews['status'];
 	const decision = mapEnum<PullRequestReviews['status'] | null>(REVIEW_DECISION, pr.reviewDecision, null, 'review decision');
-	if (decision) {
+	if (decision === 'approved' && (pendingReviewers.length > 0 || pendingTeams > 0)) {
+		status = 'pending';
+	} else if (decision) {
 		status = decision;
 	} else if (reviewers.some((reviewer) => reviewer.state === REVIEW_STATE.changesRequested)) {
 		status = 'changes_requested';
