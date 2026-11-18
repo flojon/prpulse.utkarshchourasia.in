@@ -92,8 +92,8 @@ export function jiraLinkFor(branchName: string, baseUrl: string): JiraLink | nul
 	if (!branchName || !baseUrl) return null;
 
 	const ticket = jiraTicketFor(branchName);
-	const origin = sanitizeJiraUrl(baseUrl);
-	if (!ticket || !origin) return null;
+	const base = sanitizeJiraUrl(baseUrl);
+	if (!ticket || !base) return null;
 
-	return { ticket, url: `${origin}/browse/${ticket}` };
+	return { ticket, url: `${base}/browse/${ticket}` };
 }
