@@ -82,7 +82,7 @@ export interface SyncProgress {
 export type SyncProgressListener = (partial: PrSourceResult, progress: SyncProgress) => void;
 
 /** The worker's fetch, as the popup sees it. Kept in storage because the worker and the popup share nothing else. */
-export interface SyncStatus {
+export interface SyncStatus extends SyncProgress {
 	inProgress: boolean;
 	startedAt: number;
 	/** Refreshed by the worker while it runs, so a slow but live sync is not mistaken for an abandoned one. */
