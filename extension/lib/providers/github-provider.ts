@@ -66,6 +66,7 @@ type StatesResponse = {
 // GraphQL point cost is charged on the nodes a query *requests*, not the ones it returns, and nested
 // connections multiply by their parent's page size. So each PR node here costs roughly
 // 1 + REVIEWS + REVIEW_REQUESTS + REVIEW_THREADS nodes, and the search page size multiplies all of it.
+
 // GitHub's hard limit for `first`; DEFAULT_PAGE_SIZE is what a page normally asks for.
 const MAX_PAGE_SIZE = 100;
 // A 100-PR page with all its nested reviews runs close to GraphQL's ~10s timeout and regularly crosses
@@ -76,9 +77,7 @@ const DEFAULT_PAGE_SIZE = 25;
 // The cap is on PRs, not pages: a view that had to shrink its page size after a timeout still gets
 // the same coverage as one that fetched full pages.
 const MAX_PRS_PER_VIEW = 300;
-// GitHub abandons a GraphQL query that runs past its ~10s budget and answers 502 or 504. Wall time
-// grows with the page size, so a full page of PRs with all their nested reviews can time out on
-// every attempt for an account with many open PRs. Halve and retry the same cursor, down to this floor.
+// A timed-out page is halved and retried at the same cursor, down to this floor.
 const MIN_PAGE_SIZE = 10;
 const REVIEWS_PAGE_SIZE = 50;
 const REVIEW_REQUESTS_PAGE_SIZE = 20;
