@@ -20,7 +20,7 @@ import {
 } from './lib/extension-api';
 import { onFiltersChanged, storage } from './lib/storage';
 import { badgeCount } from './lib/pr-view';
-import { DASHBOARD_URL, notificationsFor } from './lib/pr-notify';
+import { DASHBOARD_URL, isStaleCache, notificationsFor } from './lib/pr-notify';
 import { isAuthError } from './lib/errors';
 import type { PrSource, PrSourceResult, PullRequestData, RuntimeMessage } from './lib/types';
 
@@ -54,7 +54,13 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<
 	throw lastError;
 }
 
-async function fetchAndCachePRs(throwError = false): Promise<void> {
+interface FetchOptions {
+	throwError?: boolean;
+	/** Skip notifying when the cache is too old to diff: an overdue alarm, browser start, a dead token. */
+	quietIfStale?: boolean;
+}
+
+async function fetchAndCachePRs({ throwError = false, quietIfStale = false }: FetchOptions = {}): Promise<void> {
 	try {
 		const source = await currentSource();
 		if (!source) {
@@ -70,7 +76,8 @@ async function fetchAndCachePRs(throwError = false): Promise<void> {
 		const data = await fetchWithRetry(() => source.getAllPullRequests());
 		await storage.setPullRequests(data);
 		await refreshBadge();
-		await notify(source, previous, data);
+		const stale = quietIfStale && isStaleCache(previous.lastFetched, Date.now(), (await storage.getSettings()).pollingIntervalMs);
+		if (!stale) await notify(source, previous, data);
 		console.log(`Fetched ${data.myPRs.length} my PRs, ${data.reviewRequests.length} review requests`);
 	} catch (error) {
 		console.error('Failed to fetch PR data:', error);
@@ -204,13 +211,13 @@ runtimeOnInstalledAddListener(async (details) => {
 		return;
 	}
 
-	await fetchAndCachePRs();
+	await fetchAndCachePRs({ quietIfStale: true });
 	await setupPollingAlarm(true);
 });
 
 runtimeOnStartupAddListener(async () => {
 	await refreshBadge();
-	await fetchAndCachePRs();
+	await fetchAndCachePRs({ quietIfStale: true });
 	await setupPollingAlarm(true);
 });
 
@@ -223,7 +230,7 @@ onFiltersChanged(() => {
 alarmsOnAlarmAddListener(async (alarm) => {
 	if (alarm.name === ALARM_NAME) {
 		console.log('Polling alarm triggered');
-		await fetchAndCachePRs();
+		await fetchAndCachePRs({ quietIfStale: true });
 	}
 });
 
@@ -239,13 +246,15 @@ runtimeOnMessageAddListener(async (message) => {
 
 const messageHandlers: Record<RuntimeMessage['type'], (message: RuntimeMessage) => Promise<unknown>> = {
 	PROVIDER_CONFIGURED: async () => {
-		await fetchAndCachePRs();
+		await fetchAndCachePRs({ quietIfStale: true });
+		// A failed fetch skips the badge refresh, and a switched account's cache was just cleared.
+		await refreshBadge();
 		await setupPollingAlarm(true);
 		return { success: true };
 	},
 	REFRESH_PRS: async () => {
 		try {
-			await fetchAndCachePRs(true);
+			await fetchAndCachePRs({ throwError: true });
 			return { success: true };
 		} catch (error) {
 			if (isAuthError(error)) {
