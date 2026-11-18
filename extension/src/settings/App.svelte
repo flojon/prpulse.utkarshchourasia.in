@@ -10,8 +10,8 @@
 	import { permissionsRequest, runtimeGetURL, runtimeSendMessage } from '../../lib/extension-api';
 	import { storage } from '../../lib/storage';
 	import type { Settings, StoredProviderConfig } from '../../lib/types';
-	import { isValidHttpUrl, copyToClipboard } from '../../lib/utils';
-	import { sanitizeJiraUrl } from '../../lib/jira';
+	import { copyToClipboard } from '../../lib/utils';
+	import { commitJiraUrl, jiraDashboardUrlFor, sanitizeJiraUrl } from '../../lib/jira';
 	import { commitProvider, connectGithubToken, refreshTokenExpiration } from '../../lib/github-connect';
 	import { DEFAULT_SETTINGS } from '../../lib/ui-config';
 
@@ -31,6 +31,7 @@
 	let provider = $state<StoredProviderConfig | undefined>(undefined);
 	let currentSettings = $state<Settings>(DEFAULT_SETTINGS);
 	let jiraUrl = $state('');
+	let jiraUrlError = $state('');
 	let pollingIntervalMs = $state(600000);
 	let selectedPollingValue = $state(600000);
 	let customMinutes = $state(10);
@@ -59,7 +60,7 @@
 	}
 
 	let isConnected = $derived(!!(provider && provider.user && !reconnecting));
-	let jiraDashboardUrl = $derived(jiraUrl && isValidHttpUrl(jiraUrl) ? `${jiraUrl}/jira/for-you` : '');
+	let jiraDashboardUrl = $derived(jiraDashboardUrlFor(jiraUrl));
 	let normalizedCustomMinutes = $derived.by(() => {
 		const parsed = Number(customMinutes);
 		if (!Number.isFinite(parsed)) {
@@ -201,9 +202,15 @@
 	}
 
 	async function saveJiraUrl() {
-		const sanitized = sanitizeJiraUrl(jiraUrl.trim());
-		jiraUrl = sanitized;
-		await updateSetting('jiraBaseUrl', sanitized);
+		const committed = commitJiraUrl(jiraUrl);
+		if (committed === null) {
+			jiraUrlError = 'Please enter a valid Jira URL or leave the field empty.';
+			return;
+		}
+
+		jiraUrlError = '';
+		jiraUrl = committed;
+		await updateSetting('jiraBaseUrl', committed);
 	}
 
 	async function validateAndSaveToken() {
@@ -388,7 +395,9 @@
 			</div>
 			<div class="space-y-3">
 				<input class="field-input" type="url" bind:value={jiraUrl} placeholder="https://company.atlassian.net/browse/PROJ-123" onblur={saveJiraUrl} />
-				{#if jiraDashboardUrl}
+				{#if jiraUrlError}
+					<p class="text-sm text-(--danger)">{jiraUrlError}</p>
+				{:else if jiraDashboardUrl}
 					<p class="desc">Your Dashboard: <a class="link-accent" href={jiraDashboardUrl} target="_blank" rel="noopener noreferrer">{jiraDashboardUrl}</a></p>
 				{:else}
 					<p class="desc">Enter any Jira URL and PR Pulse will normalize it to the base workspace URL.</p>

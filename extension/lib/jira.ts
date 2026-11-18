@@ -29,7 +29,53 @@ export function sanitizeJiraUrl(url: string): string {
 		return '';
 	}
 
-	return parsed.origin;
+	return parsed.origin + contextPath(parsed);
+}
+
+/**
+ * What to store when the user commits the field: `''` for a blank one, `null` when something was typed
+ * that cannot become a base URL. Typing must not go through this; sanitising per keystroke eats the `/`.
+ */
+export function commitJiraUrl(typed: string): string | null {
+	if (!typed.trim()) return '';
+
+	return sanitizeJiraUrl(typed) || null;
+}
+
+/**
+ * Where Jira's own routes start. Everything from the first of these on is a pasted deep link, not
+ * part of the base. `jira` is deliberately absent: on Data Center it is the usual context path.
+ */
+const JIRA_ROUTES = new Set(['browse', 'secure', 'projects', 'issues', 'plugins', 'rest', 'servicedesk']);
+
+/** Legacy Jira pages (`login.jsp`, `Dashboard.jspa`) are never a context path, wherever they sit. */
+const JIRA_PAGE = /\.jspa?$/i;
+
+/**
+ * Self-hosted Jira can live under a context path (`https://example.com/jira`), so the path before
+ * the first Jira route is part of the base. Cloud never has one, and its own routes start with
+ * `/jira/...`, so an atlassian.net URL is always cut back to the origin.
+ */
+function contextPath(url: URL): string {
+	if (isCloud(url)) return '';
+
+	const segments = url.pathname.split('/').filter(Boolean);
+	const end = segments.findIndex((segment) => JIRA_ROUTES.has(segment.toLowerCase()) || JIRA_PAGE.test(segment));
+	const kept = end === -1 ? segments : segments.slice(0, end);
+
+	return kept.length ? `/${kept.join('/')}` : '';
+}
+
+function isCloud(url: URL): boolean {
+	return url.hostname === 'atlassian.net' || url.hostname.endsWith('.atlassian.net');
+}
+
+/** The landing page for a sanitized base: Cloud's "For you", Data Center's dashboard. */
+export function jiraDashboardUrlFor(baseUrl: string): string {
+	const base = sanitizeJiraUrl(baseUrl);
+	if (!base) return '';
+
+	return isCloud(new URL(base)) ? `${base}/jira/for-you` : `${base}/secure/Dashboard.jspa`;
 }
 
 /** The branch-name ticket rule, shared with the popup's search index so the two cannot disagree. */
@@ -46,8 +92,8 @@ export function jiraLinkFor(branchName: string, baseUrl: string): JiraLink | nul
 	if (!branchName || !baseUrl) return null;
 
 	const ticket = jiraTicketFor(branchName);
-	const origin = sanitizeJiraUrl(baseUrl);
-	if (!ticket || !origin) return null;
+	const base = sanitizeJiraUrl(baseUrl);
+	if (!ticket || !base) return null;
 
-	return { ticket, url: `${origin}/browse/${ticket}` };
+	return { ticket, url: `${base}/browse/${ticket}` };
 }
