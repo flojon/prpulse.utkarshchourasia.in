@@ -16,7 +16,6 @@
 		formatPrAge,
 	} from '../../lib/utils';
 	import { jiraLinkFor } from '../../lib/jira';
-	import { hasMergeConflicts } from '../../lib/pr-view';
 	import type { PullRequest, Settings } from '../../lib/types';
 
 	// `tone` and `dot` are the CSS classes this card applies directly, so the maps live beside it.
@@ -89,8 +88,11 @@
 		return link && isValidHttpUrl(link.url) ? link : null;
 	}
 
-	// Conflicts replace the yellow/red review state on the card.
-	const hasConflicts = hasMergeConflicts;
+	// Conflicts replace the yellow/red review state, except on an approved PR: it stays green so the
+	// card doesn't hide the finished review.
+	function hasConflicts(pr: PullRequest) {
+		return pr.mergeable === 'conflicting' && pr.reviews?.status !== 'approved';
+	}
 
 	function getCardStatusClass(pr: PullRequest) {
 		if (pr.isDraft) {

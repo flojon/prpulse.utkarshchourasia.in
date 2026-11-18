@@ -247,15 +247,16 @@ function testConflictsFilter(): void {
 		pr({ id: 'c', mergeable: 'unknown' }),
 		pr({ id: 'd' }),
 		pr({ id: 'e', mergeable: 'conflicting', isDraft: true }),
-		// The card keeps an approved PR green, so the filter must not list it as conflicting either.
+		// The card keeps an approved PR green, but it still can't merge, so the filter must find it.
 		pr({ id: 'f', mergeable: 'conflicting', reviews: { status: 'approved' } as PullRequest['reviews'] }),
 	];
 	const ids = (list: PullRequest[]) => list.map((item) => item.id);
 
 	assert.deepEqual(ids(createPrView(mixed, filters, '', 'myPRs').items), ['a', 'b', 'c', 'd', 'f']);
-	assert.deepEqual(ids(createPrView(mixed, { ...filters, conflictsOnly: true }, '', 'myPRs').items), ['a']);
+	assert.deepEqual(ids(createPrView(mixed, { ...filters, conflictsOnly: true }, '', 'myPRs').items), ['a', 'f']);
 	// Works on both tabs, combines with the draft filter, and counts as an active filter everywhere.
 	assert.deepEqual(ids(createPrView(mixed, { ...filters, conflictsOnly: true, drafts: 'include' }, '', 'toReview').items), ['a', 'e']);
+	assert.deepEqual(ids(createPrView(mixed, { ...filters, conflictsOnly: true, showReviewed: true }, '', 'toReview').items), ['a', 'f']);
 	assert.equal(countActiveFilters({ ...filters, conflictsOnly: true }, 'myPRs'), 1);
 	assert.equal(countActiveFilters({ ...filters, conflictsOnly: true }, 'toReview'), 1);
 

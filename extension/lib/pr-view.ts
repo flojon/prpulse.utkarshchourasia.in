@@ -101,12 +101,6 @@ export function switchTab(
 
 type FilterSubset = Partial<Pick<PopupFilters, 'authors' | 'owners' | 'repos' | 'drafts' | 'showReviewed' | 'conflictsOnly'>>;
 
-// Conflicts block the merge whatever the reviewers think, but an approved PR stays green so the badge
-// doesn't hide the finished review. The card and the conflicts filter share this so they never disagree.
-export function hasMergeConflicts(pr: PullRequest): boolean {
-	return pr.mergeable === 'conflicting' && pr.reviews?.status !== 'approved';
-}
-
 function ownerLoginOf(pr: PullRequest): string {
 	return pr.repoOwner?.login || pr.repoFullName?.split('/')[0] || '';
 }
@@ -137,7 +131,7 @@ function applyFilters(items: PullRequest[], filters: FilterSubset): PullRequest[
 	}
 
 	if (filters.conflictsOnly) {
-		result = result.filter((pr) => hasMergeConflicts(pr));
+		result = result.filter((pr) => pr.mergeable === 'conflicting');
 	}
 
 	return result;
