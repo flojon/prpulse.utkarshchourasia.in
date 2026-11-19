@@ -20,8 +20,9 @@ import {
 } from './lib/extension-api';
 import { onFiltersChanged, storage } from './lib/storage';
 import { badgeCount } from './lib/pr-view';
-import { DASHBOARD_URL, isStaleCache, notificationsFor } from './lib/pr-notify';
+import { DASHBOARD_URL, notificationsFor } from './lib/pr-notify';
 import { isAuthError } from './lib/errors';
+import { createSyncCoordinator, runSync as runSyncWith, type SyncOptions } from './lib/sync';
 import type { PrSource, PrSourceResult, PullRequestData, RuntimeMessage } from './lib/types';
 
 const ALARM_NAME = 'pr-poll';
@@ -29,11 +30,6 @@ const ALARM_NAME = 'pr-poll';
 // No settings cache. MV3 tears this worker down between events, so a cache guards a local storage
 // read that is already cheap, at the cost of three module-level variables five handlers had to
 // invalidate by hand. Read on demand instead; storage is the single source.
-
-async function currentSource(): Promise<PrSource | null> {
-	const provider = await storage.getProvider();
-	return provider ? new GitHubProvider({ token: provider.token, baseUrl: provider.baseUrl }) : null;
-}
 
 async function fetchWithRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 	let lastError: unknown;
@@ -60,36 +56,25 @@ interface FetchOptions {
 	quietIfStale?: boolean;
 }
 
+const coordinator = createSyncCoordinator((options?: SyncOptions) => runSync(options));
+
 async function fetchAndCachePRs({ throwError = false, quietIfStale = false }: FetchOptions = {}): Promise<void> {
 	try {
-		const source = await currentSource();
-		if (!source) {
-			console.log('No provider configured, skipping fetch');
-			if (throwError) throw new Error('No provider configured');
-			return;
-		}
-
-		console.log('Fetching PR data...');
-		// Read before the overwrite: the previous poll's result is still on disk at this instant, which is
-		// the whole reason notifications need no snapshot key of their own.
-		const previous = await storage.getPullRequests();
-		const data = await fetchWithRetry(() => source.getAllPullRequests());
-		await storage.setPullRequests(data);
-		await refreshBadge();
-		const stale = quietIfStale && isStaleCache(previous.lastFetched, Date.now(), (await storage.getSettings()).pollingIntervalMs);
-		if (!stale) await notify(source, previous, data);
-		console.log(`Fetched ${data.myPRs.length} my PRs, ${data.reviewRequests.length} review requests`);
+		await coordinator.sync({ quietIfStale });
 	} catch (error) {
-		console.error('Failed to fetch PR data:', error);
-		if (isAuthError(error)) {
-			const config = await storage.getProvider();
-			if (config) {
-				config.isTokenInvalid = true;
-				await storage.setProvider(config);
-			}
-		}
 		if (throwError) throw error;
 	}
+}
+
+function runSync(options?: SyncOptions): Promise<void> {
+	return runSyncWith({
+		storage,
+		makeSource: (provider) => new GitHubProvider({ token: provider.token, baseUrl: provider.baseUrl }),
+		fetchWithRetry,
+		refreshBadge,
+		notify,
+		...options,
+	});
 }
 
 /** The count itself is decided by the view module, so the popup and the badge cannot disagree. */
@@ -245,11 +230,15 @@ runtimeOnMessageAddListener(async (message) => {
 });
 
 const messageHandlers: Record<RuntimeMessage['type'], (message: RuntimeMessage) => Promise<unknown>> = {
+	// Answers before the first fetch finishes: with many PRs that fetch takes tens of seconds, and both
+	// onboarding and settings wait on this reply. The popup follows the fetch through `syncStatus`.
+	// A sync already running was started with the previous token, so this one queues behind it rather
+	// than joining it.
 	PROVIDER_CONFIGURED: async () => {
-		await fetchAndCachePRs({ quietIfStale: true });
-		// A failed fetch skips the badge refresh, and a switched account's cache was just cleared.
+		// A switched account's cache was just cleared, so the badge must not keep the old count meanwhile.
 		await refreshBadge();
 		await setupPollingAlarm(true);
+		void coordinator.syncAfterCurrent({ quietIfStale: true }).catch(() => undefined);
 		return { success: true };
 	},
 	REFRESH_PRS: async () => {
