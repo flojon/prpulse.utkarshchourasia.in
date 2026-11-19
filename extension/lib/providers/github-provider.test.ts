@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { ProviderError } from '../errors';
 import {
 	buildReviews,
+	buildBehindQuery,
 	firstUnresolvedThreadUrl,
 	GitHubProvider,
 	isQueryTimeout,
 	nextPageSize,
+	readBehindCounts,
 	smallerPageSize,
 } from './github-provider';
 
@@ -230,4 +232,21 @@ function testReviewStatus(): void {
 }
 
 testReviewStatus();
+function testBehindCounts(): void {
+	const targets = [
+		{ id: 'github-A', owner: 'o', name: 'r', base: 'main', headOid: 'abc' },
+		{ id: 'github-B', owner: 'o2', name: 'r2', base: 'dev', headOid: 'def' },
+	];
+	const { query, variables } = buildBehindQuery(targets);
+	assert.match(query, /p0: repository\(owner: \$o0, name: \$n0\)/);
+	assert.match(query, /p1: repository/);
+	assert.deepEqual(variables, { o0: 'o', n0: 'r', b0: 'main', h0: 'abc', o1: 'o2', n1: 'r2', b1: 'dev', h1: 'def' });
+
+	// Unreadable repo, missing base ref and failed compare all leave the count off rather than showing 0.
+	const counts = readBehindCounts(targets, { rateLimit: null, p0: { ref: { compare: { behindBy: 0 } } }, p1: { ref: null } });
+	assert.equal(counts.get('github-A'), 0);
+	assert.equal(counts.has('github-B'), false);
+}
+
+testBehindCounts();
 console.log('github-provider: all checks passed');
