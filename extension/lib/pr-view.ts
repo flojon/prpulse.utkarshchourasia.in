@@ -45,6 +45,7 @@ const DEFAULT_FILTERS: Readonly<PopupFilters> = Object.freeze({
 	ageRange: '',
 	drafts: 'exclude',
 	showReviewed: false,
+	conflictsOnly: false,
 });
 
 export function createDefaultFilters(): PopupFilters {
@@ -63,6 +64,7 @@ export function cloneFilters(filters: PopupFilters): PopupFilters {
 		ageRange: filters.ageRange,
 		drafts: filters.drafts,
 		showReviewed: filters.showReviewed,
+		conflictsOnly: filters.conflictsOnly,
 	};
 }
 
@@ -76,6 +78,7 @@ export function sameFilters(left: PopupFilters, right: PopupFilters): boolean {
 		left.ageRange === right.ageRange &&
 		left.drafts === right.drafts &&
 		left.showReviewed === right.showReviewed &&
+		left.conflictsOnly === right.conflictsOnly &&
 		sameList(left.authors, right.authors) &&
 		sameList(left.owners, right.owners) &&
 		sameList(left.repos, right.repos)
@@ -96,7 +99,7 @@ export function switchTab(
 	return { stash: next, filters: cloneFilters(next[to]) };
 }
 
-type FilterSubset = Partial<Pick<PopupFilters, 'authors' | 'owners' | 'repos' | 'drafts' | 'showReviewed'>>;
+type FilterSubset = Partial<Pick<PopupFilters, 'authors' | 'owners' | 'repos' | 'drafts' | 'showReviewed' | 'conflictsOnly'>>;
 
 function ownerLoginOf(pr: PullRequest): string {
 	return pr.repoOwner?.login || pr.repoFullName?.split('/')[0] || '';
@@ -125,6 +128,10 @@ function applyFilters(items: PullRequest[], filters: FilterSubset): PullRequest[
 
 	if (filters.showReviewed === false) {
 		result = result.filter((pr) => pr.reviews.status !== 'approved');
+	}
+
+	if (filters.conflictsOnly) {
+		result = result.filter((pr) => pr.mergeable === 'conflicting');
 	}
 
 	return result;
@@ -201,7 +208,8 @@ export function countActiveFilters(filters: PopupFilters, tab: PopupTab): number
 		filters.owners.length +
 		filters.repos.length +
 		(filters.drafts !== DEFAULT_FILTERS.drafts ? 1 : 0) +
-		(filters.showReviewed && tab === 'toReview' ? 1 : 0)
+		(filters.showReviewed && tab === 'toReview' ? 1 : 0) +
+		(filters.conflictsOnly ? 1 : 0)
 	);
 }
 
@@ -255,6 +263,7 @@ export function createPrView(items: PullRequest[], filters: PopupFilters, query:
 		owners: applied.owners,
 		repos: applied.repos,
 		showReviewed,
+		conflictsOnly: applied.conflictsOnly,
 	});
 
 	return {
@@ -301,6 +310,7 @@ function normalizeFilters(value: StoredFilters | undefined): PopupFilters {
 		ageRange: typeof stored.ageRange === 'string' ? stored.ageRange : DEFAULT_FILTERS.ageRange,
 		drafts: stored.drafts === 'only' || stored.drafts === 'include' ? stored.drafts : DEFAULT_FILTERS.drafts,
 		showReviewed: typeof stored.showReviewed === 'boolean' ? stored.showReviewed : DEFAULT_FILTERS.showReviewed,
+		conflictsOnly: stored.conflictsOnly === true,
 	};
 }
 
